@@ -1,12 +1,18 @@
+import { Sidebar } from './components/Sidebar'
+import { Topbar } from './components/Topbar'
+import { DashboardPage } from './pages/DashboardPage'
+import './styles/app.css'
+
 function App() {
   return (
-    <main>
-      <h1>AI Product Dashboard</h1>
-      <p>
-        Frontend dashboard for monitoring AI product activity, realtime events,
-        and usage analytics.
-      </p>
-    </main>
+    <div className="app-shell">
+      <Sidebar />
+
+      <div className="app-main">
+        <Topbar />
+        <DashboardPage />
+      </div>
+    </div>
   )
 }
 

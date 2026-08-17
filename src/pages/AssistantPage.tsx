@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { streamChat } from '../services/chat'
 import type { ChatMessage } from '../types/chat'
 
 const initialMessages: ChatMessage[] = [
@@ -12,11 +13,18 @@ const initialMessages: ChatMessage[] = [
 ]
 
 export function AssistantPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const [messages, setMessages] =
+    useState<ChatMessage[]>(initialMessages)
+
   const [input, setInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault()
 
     const trimmedInput = input.trim()
@@ -31,25 +39,72 @@ export function AssistantPage() {
       content: trimmedInput,
     }
 
-    setMessages((currentMessages) => [...currentMessages, userMessage])
+    const assistantMessageId = crypto.randomUUID()
+
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+    }
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      userMessage,
+      assistantMessage,
+    ])
+
     setInput('')
+    setError(null)
     setIsGenerating(true)
 
-    window.setTimeout(() => {
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content:
-          'This is a simulated AI response. SSE streaming will replace this mock response in the next stage.',
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    try {
+      await streamChat({
+        message: trimmedInput,
+        signal: controller.signal,
+
+        onChunk: (chunk) => {
+          setMessages((currentMessages) =>
+            currentMessages.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    content: message.content + chunk,
+                  }
+                : message,
+            ),
+          )
+        },
+      })
+    } catch (requestError) {
+      if (
+        requestError instanceof DOMException &&
+        requestError.name === 'AbortError'
+      ) {
+        return
       }
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        assistantMessage,
-      ])
+      setError(
+        'Unable to generate a response. Please try again.',
+      )
 
+      setMessages((currentMessages) =>
+        currentMessages.filter(
+          (message) =>
+            message.id !== assistantMessageId ||
+            message.content.length > 0,
+        ),
+      )
+    } finally {
       setIsGenerating(false)
-    }, 900)
+      abortControllerRef.current = null
+    }
+  }
+
+  const handleStop = () => {
+    abortControllerRef.current?.abort()
   }
 
   return (
@@ -58,8 +113,8 @@ export function AssistantPage() {
         <p className="section-label">AI Assistant</p>
         <h2>AI conversation</h2>
         <p>
-          Ask questions about product activity and receive streamed AI
-          responses.
+          Ask questions about product activity and receive streamed
+          AI responses.
         </p>
       </section>
 
@@ -75,43 +130,51 @@ export function AssistantPage() {
               </div>
 
               <div className="message__bubble">
-                {message.content}
+                {message.content ||
+                  (isGenerating ? 'Connecting...' : '')}
               </div>
             </article>
           ))}
-
-          {isGenerating && (
-            <article className="message message--assistant">
-              <div className="message__meta">Nexa AI</div>
-
-              <div className="message__bubble message__bubble--loading">
-                Generating response...
-              </div>
-            </article>
-          )}
         </div>
 
         <form className="chat__composer" onSubmit={handleSubmit}>
+          {error && (
+            <div className="chat__error" role="alert">
+              {error}
+            </div>
+          )}
+
           <textarea
             aria-label="Message"
             placeholder="Ask something about your AI product..."
             rows={3}
             value={input}
+            disabled={isGenerating}
             onChange={(event) => setInput(event.target.value)}
           />
 
           <div className="chat__composer-footer">
             <span>
-              Responses are currently simulated locally.
+              Responses are streamed from the local API using SSE.
             </span>
 
-            <button
-              className="button button--primary"
-              disabled={!input.trim() || isGenerating}
-              type="submit"
-            >
-              {isGenerating ? 'Generating...' : 'Send'}
-            </button>
+            {isGenerating ? (
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={handleStop}
+              >
+                Stop generating
+              </button>
+            ) : (
+              <button
+                className="button button--primary"
+                disabled={!input.trim()}
+                type="submit"
+              >
+                Send
+              </button>
+            )}
           </div>
         </form>
       </section>

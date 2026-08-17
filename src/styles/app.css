@@ -423,3 +423,12 @@ button {
     width: 100%;
   }
 }
+.chat__error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #63343a;
+  border-radius: 8px;
+  background: #241418;
+  color: #f0a8ae;
+  font-size: 13px;
+}
